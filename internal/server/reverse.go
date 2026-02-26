@@ -5,11 +5,13 @@ import (
 	"PandoraHelper/pkg/log"
 	"PandoraHelper/pkg/server/reverse/chatgpt"
 	"PandoraHelper/pkg/server/reverse/claude"
-	"github.com/gin-gonic/gin"
-	"github.com/spf13/viper"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"regexp"
+
+	"github.com/gin-gonic/gin"
+	"github.com/spf13/viper"
 )
 
 func NewChatGPTReverseProxyServer(
@@ -84,7 +86,15 @@ func NewClaudeReverseProxyServer(
 	}
 
 	// 处理所有请求
-	r.Use(proxyHandler)
+	re := regexp.MustCompile(`^/api/organizations/([^/]+)/chat_conversations/([^/]+)/completion$`)
+	r.Use(func(c *gin.Context) {
+		path := c.Request.URL.Path
+		if re.MatchString(path) && c.Request.Method == "POST" {
+			// 已经在上面针对特定的 POST 路由处理过了，这里直接跳过转发
+			return
+		}
+		proxyHandler(c)
+	})
 
 	s := claude.NewServer(
 		r,
