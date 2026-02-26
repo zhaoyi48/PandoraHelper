@@ -1,0 +1,36 @@
+# Dockerfile.multi
+
+# Stage 1: build frontend
+FROM node:18-alpine AS frontend-builder
+WORKDIR /app/frontend
+# Configure pnpm
+RUN npm install -g pnpm
+COPY frontend/package.json frontend/pnpm-lock.yaml ./
+RUN pnpm install
+COPY frontend/ ./
+RUN pnpm build
+
+# Stage 2: build backend
+FROM golang:1.19-alpine AS backend-builder
+WORKDIR /app
+# Install wire
+RUN go install github.com/google/wire/cmd/wire@latest
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+# Copy pre-built frontend files into the correct location for embed
+COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
+# Generate wire code
+RUN /go/bin/wire ./internal/server/wire
+# Build final binary
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o PandoraHelper ./cmd/server/main.go
+
+# Stage 3: runtime
+FROM alpine:latest
+WORKDIR /app
+# Install runtime dependencies
+RUN apk add --no-cache tzdata ca-certificates
+# Copy binary from builder
+COPY --from=backend-builder /app/PandoraHelper .
+
+ENTRYPOINT ["./PandoraHelper"]
